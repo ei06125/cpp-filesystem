@@ -1,0 +1,83 @@
+# This file is a template, and might need editing before it works on your project.
+# You can copy and paste this template into a new `.gitlab-ci.yml` file.
+# You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
+#
+# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/C++.gitlab-ci.yml
+
+# use the official gcc image, based on debian
+# can use versions as well, like gcc:5.2
+# see https://hub.docker.com/_/gcc/
+
+image: gcc
+
+stages:
+  - build
+  - test
+  - format
+  - test_after_format
+  - deploy
+
+before_script:
+  - apt-get update
+  - apt-get install -y cmake clang clang-format curl python3-pip
+  - curl https://raw.githubusercontent.com/Microsoft/vcpkg/master/bootstrap-vcpkg.sh -o bootstrap-vcpkg.sh
+  - chmod +x bootstrap-vcpkg.sh
+  - ./bootstrap-vcpkg.sh
+  - echo "VCPKG_ROOT=$(pwd)/vcpkg" >> ~/.bashrc
+  - source ~/.bashrc
+  - vcpkg install --triplet x64-linux-clang boost
+  - pip3 install cmake-format
+
+build:
+  stage: build
+  script:
+    - cmake -S . -B build/CI -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build/CI
+  artifacts:
+    paths:
+      - build/CI
+
+test:
+  stage: test
+  script:
+    - cd build/CI
+    - ctest
+  dependencies:
+    - build
+  only:
+    - main
+
+format:
+  stage: format
+  script:
+    - find . -name "*.cpp" -o -name "*.h" | xargs clang-format -i
+    - find . -name "CMakeLists.txt" -o -name "*.cmake" | xargs cmake-format -i
+  dependencies:
+    - build
+  only:
+    - main
+
+test_after_format:
+  stage: test_after_format
+  script:
+    - cd build/CI
+    - ctest
+    - echo "Test"
+  dependencies:
+    - format
+  only:
+    - main
+
+deploy:
+  stage: deploy
+  script:
+    - echo "To create a package using cpack, run the following command 'cd build/CI && cpack -C Release'"
+    - echo "The deploy command could be 'git push origin main'"
+  environment: production
+  dependencies:
+    - build
+  only:
+    - main
